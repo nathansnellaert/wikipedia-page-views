@@ -39,4 +39,4 @@ jobs:
          BUCKET_NAME: subsets-datasets
        run: |
          poetry run python -u src/main.py \
-           --start-date "2024-12-01"
+           --start-date "2024-01-01"
