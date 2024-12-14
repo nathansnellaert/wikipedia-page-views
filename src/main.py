@@ -4,7 +4,6 @@ import bz2
 from datetime import datetime, timedelta
 import pyarrow as pa
 import pyarrow.parquet as pq
-from typing import List
 from google.cloud import storage
 from google.cloud import bigquery
 from io import BytesIO
@@ -14,7 +13,7 @@ DATASET_ID = "datasets"
 TABLE_NAME = "wikipedia_daily_pageviews"
 GCS_PREFIX = TABLE_NAME
 
-def setup_views(bq_client, project_id: str, bucket_name: str):
+def setup_views(bq_client, project_id, bucket_name):
     daily_view = f"""
     CREATE OR REPLACE EXTERNAL TABLE `{project_id}.{DATASET_ID}.{TABLE_NAME}`
     OPTIONS (
@@ -42,23 +41,13 @@ def setup_views(bq_client, project_id: str, bucket_name: str):
     bq_client.query(daily_view).result()
     bq_client.query(weekly_view).result()
 
-def get_remaining_gcs_partitions(bucket_name: str, start_date: str) -> List[str]:
+def get_existing_partitions(bucket_name):
     client = storage.Client()
     bucket = client.bucket(bucket_name)
-    
-    blobs = bucket.list_blobs(prefix=f"{GCS_PREFIX}/")
-    existing_partitions = {blob.name.split("/")[-1].split(".")[0] for blob in blobs}
-    
-    start = datetime.strptime(start_date, '%Y-%m-%d')
-    end = datetime.now()
-    all_partitions = [
-        (start + timedelta(days=x)).strftime('%Y-%m-%d')
-        for x in range((end - start).days + 1)
-    ]
-    
-    return [p for p in all_partitions if p not in existing_partitions]
+    blobs = list(bucket.list_blobs(prefix=f"{GCS_PREFIX}/"))
+    return {blob.name.split("/")[-1].split(".")[0] for blob in blobs}
 
-def fetch_pageviews(date: datetime) -> pa.Table:
+def fetch_pageviews(date):
     url = f"https://dumps.wikimedia.org/other/pageview_complete/{date.year}/{date.year}-{date.month:02d}/pageviews-{date.year}{date.month:02d}{date.day:02d}-user.bz2"
     
     dates, entities, page_ids, views = [], [], [], []
@@ -87,14 +76,19 @@ def fetch_pageviews(date: datetime) -> pa.Table:
 
     return table.group_by(['date', 'entity', 'page_id']).aggregate([('views', 'sum')])
 
-def main(start_date: str):
+def main(start_date):
     project_id = os.environ["GOOGLE_CLOUD_PROJECT"]
     bucket_name = os.environ["BUCKET_NAME"]
     
-    bq_client = bigquery.Client()
-    setup_views(bq_client, project_id, bucket_name)
+    start = datetime.strptime(start_date, '%Y-%m-%d')
+    end = datetime.now()
+    all_partitions = [
+        (start + timedelta(days=x)).strftime('%Y-%m-%d')
+        for x in range((end - start).days + 1)
+    ]
     
-    remaining_partitions = get_remaining_gcs_partitions(bucket_name, start_date)
+    existing_partitions = get_existing_partitions(bucket_name)
+    remaining_partitions = [p for p in all_partitions if p not in existing_partitions]
     print(f"Found {len(remaining_partitions)} partitions to fetch")
     
     client = storage.Client()
@@ -105,12 +99,12 @@ def main(start_date: str):
         date = datetime.strptime(partition_key, '%Y-%m-%d')
         days_difference = (current_date - date).days
         
-        table = fetch_pageviews(date)
-        buffer = BytesIO()
-        pq.write_table(table, buffer)
-        buffer.seek(0)
-        
         try:
+            table = fetch_pageviews(date)
+            buffer = BytesIO()
+            pq.write_table(table, buffer)
+            buffer.seek(0)
+            
             blob = bucket.blob(f"{GCS_PREFIX}/{partition_key}.parquet")
             blob.upload_from_file(buffer, content_type='application/octet-stream')
             print(f"Saved {table.num_rows} records")
@@ -118,6 +112,9 @@ def main(start_date: str):
             if days_difference > 7:
                 raise
             print(f"Failed loading {partition_key}. Likely because the data is not available yet.")
+
+    bq_client = bigquery.Client()
+    setup_views(bq_client, project_id, bucket_name)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Process Wikipedia pageview stats')
