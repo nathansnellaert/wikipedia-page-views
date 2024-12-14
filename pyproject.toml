@@ -1,0 +1,22 @@
+[tool.poetry]
+name = "wikipedia-page-views"
+version = "0.1.0"
+description = ""
+authors = ["Nathan <11278700+nathansnellaert@users.noreply.github.com>"]
+readme = "README.md"
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.11"
+pandas = "^2.2.3"
+requests = "^2.32.3"
+tenacity = "^9.0.0"
+pandera = "^0.21.0"
+pyarrow = "^18.1.0"
+google-cloud-storage = "^2.18.2"
+google-cloud-bigquery = "^3.27.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
