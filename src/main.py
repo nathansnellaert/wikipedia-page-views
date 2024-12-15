@@ -103,15 +103,20 @@ def main(start_date):
     for partition_key in remaining_partitions:
         date = datetime.strptime(partition_key, '%Y-%m-%d')
         days_difference = (current_date - date).days
-        
-        table = fetch_pageviews(date)
-        buffer = BytesIO()
-        pq.write_table(table, buffer)
-        buffer.seek(0)
-        
-        blob = bucket.blob(f"{GCS_PREFIX}/{partition_key}.parquet")
-        blob.upload_from_file(buffer, content_type='application/octet-stream')
-        print(f"Saved {table.num_rows} records")
+
+        try:
+            table = fetch_pageviews(date)
+            buffer = BytesIO()
+            pq.write_table(table, buffer)
+            buffer.seek(0)
+
+            blob = bucket.blob(f"{GCS_PREFIX}/{partition_key}.parquet")
+            blob.upload_from_file(buffer, content_type='application/octet-stream')
+            print(f"Saved {table.num_rows} records")
+        except Exception as e:
+            if days_difference > 7:
+                raise
+            print(f"Failed loading {partition_key}. Likely because the data is not available yet.")
 
     bq_client = bigquery.Client()
     sync_gcs_bq(project_id, bucket_name, bq_client)
