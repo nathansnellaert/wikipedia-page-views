@@ -14,33 +14,80 @@ TABLE_NAME = "wikipedia_daily_pageviews"
 GCS_PREFIX = TABLE_NAME
 WEEKLY_TABLE_NAME = "wikipedia_weekly_pageviews"
 
-def setup_views(bq_client, project_id, bucket_name):
-    daily_view = f"""
-    CREATE OR REPLACE EXTERNAL TABLE `{project_id}.{DATASET_ID}.{TABLE_NAME}`
-    OPTIONS (
-        format = 'PARQUET',
-        uris = ['gs://{bucket_name}/{GCS_PREFIX}/*.parquet']
-    )
-    """
-    
+def setup_weekly_view(project_id, bq_client):
     weekly_view = f"""
     CREATE OR REPLACE VIEW `{project_id}.{DATASET_ID}.{WEEKLY_TABLE_NAME}` AS 
-    WITH weekly_totals AS (
+    WITH latest_data AS (
         SELECT 
-            DATE_TRUNC(date, WEEK) as week_start,
             entity,
             page_id,
-            SUM(views_sum) as weekly_views
+            views_sum,
+            ROW_NUMBER() OVER (
+                PARTITION BY date 
+                ORDER BY date DESC, views_sum DESC
+            ) as rank
         FROM `{project_id}.{DATASET_ID}.{TABLE_NAME}`
+        WHERE date = (
+            SELECT MAX(date) 
+            FROM `{project_id}.{DATASET_ID}.{TABLE_NAME}`
+        )
+    ),
+    top_pages AS (
+        SELECT entity, page_id
+        FROM latest_data
+        WHERE rank <= 100000
+    ),
+    weekly_totals AS (
+        SELECT 
+            DATE_TRUNC(t.date, WEEK) as week_start,
+            t.entity,
+            t.page_id,
+            SUM(t.views_sum) as weekly_views
+        FROM `{project_id}.{DATASET_ID}.{TABLE_NAME}` t
+        INNER JOIN top_pages p
+        ON t.entity = p.entity AND t.page_id = p.page_id
         GROUP BY 1, 2, 3
     )
     SELECT * FROM weekly_totals
-    ORDER BY weekly_views DESC
-    LIMIT 200000
+    ORDER BY week_start DESC, weekly_views DESC
     """
     
-    bq_client.query(daily_view).result()
     bq_client.query(weekly_view).result()
+
+
+# Loads the entire dataset into BigQuery.
+# This is a free operation, but we may still want to switch to a partition based system to waste less resources.
+def sync_gcs_bq(project_id, bucket_name, bq_client):
+    table_id = f"{project_id}.{DATASET_ID}.{TABLE_NAME}"
+    
+    schema = [
+        bigquery.SchemaField("date", "DATE"),
+        bigquery.SchemaField("entity", "STRING"),
+        bigquery.SchemaField("page_id", "STRING"),
+        bigquery.SchemaField("views_sum", "INTEGER"),
+    ]
+    
+    table = bigquery.Table(table_id, schema=schema)
+    table.time_partitioning = bigquery.TimePartitioning(
+        type_=bigquery.TimePartitioningType.DAY,
+        field="date"
+    )
+    table.clustering_fields = ["entity"]
+    
+    table = bq_client.create_table(table, exists_ok=True)
+    
+    job_config = bigquery.LoadJobConfig(
+        schema=schema,
+        write_disposition="WRITE_TRUNCATE",
+        source_format=bigquery.SourceFormat.PARQUET,
+    )
+    
+    load_job = bq_client.load_table_from_uri(
+        f"gs://{bucket_name}/{GCS_PREFIX}/*.parquet",
+        table_id,
+        job_config=job_config
+    )
+    load_job.result()
 
 def get_existing_partitions(bucket_name):
     client = storage.Client()
@@ -100,22 +147,18 @@ def main(start_date):
         date = datetime.strptime(partition_key, '%Y-%m-%d')
         days_difference = (current_date - date).days
         
-        try:
-            table = fetch_pageviews(date)
-            buffer = BytesIO()
-            pq.write_table(table, buffer)
-            buffer.seek(0)
-            
-            blob = bucket.blob(f"{GCS_PREFIX}/{partition_key}.parquet")
-            blob.upload_from_file(buffer, content_type='application/octet-stream')
-            print(f"Saved {table.num_rows} records")
-        except Exception as e:
-            if days_difference > 7:
-                raise
-            print(f"Failed loading {partition_key}. Likely because the data is not available yet.")
+        table = fetch_pageviews(date)
+        buffer = BytesIO()
+        pq.write_table(table, buffer)
+        buffer.seek(0)
+        
+        blob = bucket.blob(f"{GCS_PREFIX}/{partition_key}.parquet")
+        blob.upload_from_file(buffer, content_type='application/octet-stream')
+        print(f"Saved {table.num_rows} records")
 
     bq_client = bigquery.Client()
-    setup_views(bq_client, project_id, bucket_name)
+    sync_gcs_bq(project_id, bucket_name, bq_client)
+    setup_weekly_view(project_id, bq_client)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Process Wikipedia pageview stats')
