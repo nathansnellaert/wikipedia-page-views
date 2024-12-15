@@ -29,7 +29,7 @@ def setup_views(bq_client, project_id, bucket_name):
             DATE_TRUNC(date, WEEK) as week_start,
             entity,
             page_id,
-            SUM(views) as weekly_views
+            SUM(views_sum) as weekly_views
         FROM `{project_id}.{DATASET_ID}.{TABLE_NAME}`
         GROUP BY 1, 2, 3
     )
