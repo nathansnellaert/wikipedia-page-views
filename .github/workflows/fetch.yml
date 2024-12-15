@@ -40,3 +40,11 @@ jobs:
        run: |
          poetry run python -u src/main.py \
            --start-date "2024-01-01"
+
+     - name: Update charts
+       env:
+         SUBSETS_API_KEY: ${{ secrets.SUBSETS_API_KEY }}
+         DATA_DIR: data
+       run: |
+         poetry run python -u src/manage_charts.py \
+           --top-n 10000
