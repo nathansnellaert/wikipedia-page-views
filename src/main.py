@@ -12,6 +12,7 @@ import os
 DATASET_ID = "datasets"
 TABLE_NAME = "wikipedia_daily_pageviews"
 GCS_PREFIX = TABLE_NAME
+WEEKLY_TABLE_NAME = "wikipedia_weekly_pageviews"
 
 def setup_views(bq_client, project_id, bucket_name):
     daily_view = f"""
@@ -23,7 +24,7 @@ def setup_views(bq_client, project_id, bucket_name):
     """
     
     weekly_view = f"""
-    CREATE OR REPLACE VIEW `{project_id}.{DATASET_ID}.{TABLE_NAME}_weekly` AS 
+    CREATE OR REPLACE VIEW `{project_id}.{DATASET_ID}.{WEEKLY_TABLE_NAME}` AS 
     WITH weekly_totals AS (
         SELECT 
             DATE_TRUNC(date, WEEK) as week_start,
