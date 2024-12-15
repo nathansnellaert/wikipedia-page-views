@@ -61,12 +61,11 @@ def get_bulk_weekly_data(entities: List[str], start_date: str = None) -> Dict[st
         "AND DATE_TRUNC(date, WEEK) > @start_date" if start_date else ""
     )
     
-    job_config = bigquery.QueryJobConfig(
-        query_parameters=[
-            bigquery.ArrayQueryParameter("entities", "STRING", entities),
-            bigquery.ScalarQueryParameter("start_date", "DATE", start_date) if start_date else None
-        ]
-    )
+    parameters = [bigquery.ArrayQueryParameter("entities", "STRING", entities)]
+    if start_date:
+        parameters.append(bigquery.ScalarQueryParameter("start_date", "DATE", start_date))
+    
+    job_config = bigquery.QueryJobConfig(query_parameters=parameters)
     
     client = bigquery.Client()
     result = client.query(query, job_config=job_config)
