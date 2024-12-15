@@ -6,6 +6,7 @@ import requests
 import json
 from datetime import datetime
 import argparse
+import gzip
 
 SUBSETS_API_URL = os.getenv('SUBSETS_API_URL', 'https://api.subsets.io')
 SUBSETS_API_KEY = os.getenv('SUBSETS_API_KEY')
@@ -111,20 +112,33 @@ def generate_chart_config(entity: str) -> Dict:
         "background_color": "#FFFFFF"
     }
 
+def compress_json(data: Dict) -> bytes:
+    return gzip.compress(json.dumps(data).encode('utf-8'))
+
 def create_charts(configs: List[Dict]) -> List[str]:
+    compressed_data = compress_json(configs)
     response = requests.post(
         f"{SUBSETS_API_URL}/chart",
-        json=configs,
-        headers={"X-API-Key": SUBSETS_API_KEY}
+        data=compressed_data,
+        headers={
+            "X-API-Key": SUBSETS_API_KEY,
+            "Content-Encoding": "gzip",
+            "Content-Type": "application/json"
+        }
     )
     response.raise_for_status()
     return response.json()["chart_ids"]
 
 def update_chart_data(updates: Dict) -> None:
+    compressed_data = compress_json(updates)
     response = requests.put(
         f"{SUBSETS_API_URL}/chart/data",
-        json=updates,
-        headers={"X-API-Key": SUBSETS_API_KEY}
+        data=compressed_data,
+        headers={
+            "X-API-Key": SUBSETS_API_KEY,
+            "Content-Encoding": "gzip",
+            "Content-Type": "application/json"
+        }
     )
     response.raise_for_status()
 
