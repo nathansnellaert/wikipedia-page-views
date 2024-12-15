@@ -1,3 +1,4 @@
+# fetch_pageviews.py
 import argparse
 import requests
 import bz2
@@ -12,51 +13,7 @@ import os
 DATASET_ID = "datasets"
 TABLE_NAME = "wikipedia_daily_pageviews"
 GCS_PREFIX = TABLE_NAME
-WEEKLY_TABLE_NAME = "wikipedia_weekly_pageviews"
 
-def setup_weekly_view(project_id, bq_client):
-    weekly_view = f"""
-    CREATE OR REPLACE VIEW `{project_id}.{DATASET_ID}.{WEEKLY_TABLE_NAME}` AS 
-    WITH latest_data AS (
-        SELECT 
-            entity,
-            page_id,
-            views_sum,
-            ROW_NUMBER() OVER (
-                PARTITION BY date 
-                ORDER BY date DESC, views_sum DESC
-            ) as rank
-        FROM `{project_id}.{DATASET_ID}.{TABLE_NAME}`
-        WHERE date = (
-            SELECT MAX(date) 
-            FROM `{project_id}.{DATASET_ID}.{TABLE_NAME}`
-        )
-    ),
-    top_pages AS (
-        SELECT entity, page_id
-        FROM latest_data
-        WHERE rank <= 100000
-    ),
-    weekly_totals AS (
-        SELECT 
-            DATE_TRUNC(t.date, WEEK) as week_start,
-            t.entity,
-            t.page_id,
-            SUM(t.views_sum) as weekly_views
-        FROM `{project_id}.{DATASET_ID}.{TABLE_NAME}` t
-        INNER JOIN top_pages p
-        ON t.entity = p.entity AND t.page_id = p.page_id
-        GROUP BY 1, 2, 3
-    )
-    SELECT * FROM weekly_totals
-    ORDER BY week_start DESC, weekly_views DESC
-    """
-    
-    bq_client.query(weekly_view).result()
-
-
-# Loads the entire dataset into BigQuery.
-# This is a free operation, but we may still want to switch to a partition based system to waste less resources.
 def sync_gcs_bq(project_id, bucket_name, bq_client):
     table_id = f"{project_id}.{DATASET_ID}.{TABLE_NAME}"
     
@@ -158,7 +115,6 @@ def main(start_date):
 
     bq_client = bigquery.Client()
     sync_gcs_bq(project_id, bucket_name, bq_client)
-    setup_weekly_view(project_id, bq_client)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Process Wikipedia pageview stats')
