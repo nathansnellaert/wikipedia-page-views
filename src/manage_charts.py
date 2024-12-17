@@ -13,6 +13,10 @@ SUBSETS_API_KEY = os.getenv('SUBSETS_API_KEY')
 DATA_DIR = Path(os.getenv('DATA_DIR', 'data'))
 PROJECT_ID = os.environ["GOOGLE_CLOUD_PROJECT"]
 ICON_URL = "https://storage.googleapis.com/subsets-public-assets/source_logos/wikipedia.png"
+CHUNK_SIZE = 1000
+
+def chunk_list(lst: List, chunk_size: int) -> List[List]:
+    return [lst[i:i + chunk_size] for i in range(0, len(lst), chunk_size)]
 
 def get_top_pages(limit: int) -> List[str]:
     query = """
@@ -166,41 +170,54 @@ def main(top_n: int):
             new_entities.append(entity)
     
     new_charts = []
-    if new_entities:
-        print(f"Fetching data for {len(new_entities)} new entities...")
-        new_entity_data = get_bulk_weekly_data(new_entities)
-        
-        for entity in new_entities:
-            if entity in new_entity_data and new_entity_data[entity]:
-                config = generate_chart_config(entity)
-                config['data'] = new_entity_data[entity]
-                new_charts.append(config)
+    for entity_chunk in chunk_list(new_entities, CHUNK_SIZE):
+        if entity_chunk:
+            print(f"Fetching data for chunk of {len(entity_chunk)} new entities...")
+            new_entity_data = get_bulk_weekly_data(entity_chunk)
+            
+            for entity in entity_chunk:
+                if entity in new_entity_data and new_entity_data[entity]:
+                    config = generate_chart_config(entity)
+                    config['data'] = new_entity_data[entity]
+                    new_charts.append(config)
     
     updates = {}
     for last_update, entities in entities_by_date.items():
-        print(f"Fetching updates for {len(entities)} entities after {last_update}...")
-        updated_data = get_bulk_weekly_data(entities, last_update)
-        
-        for entity in entities:
-            if entity in updated_data and updated_data[entity]:
-                updates[metadata[entity]['subsets_id']] = {
-                    "create": updated_data[entity]
+        for entity_chunk in chunk_list(entities, CHUNK_SIZE):
+            if entity_chunk:
+                print(f"Fetching updates for chunk of {len(entity_chunk)} entities after {last_update}...")
+                updated_data = get_bulk_weekly_data(entity_chunk, last_update)
+                
+                for entity in entity_chunk:
+                    if entity in updated_data and updated_data[entity]:
+                        updates[metadata[entity]['subsets_id']] = {
+                            "create": updated_data[entity]
+                        }
+                        metadata[entity]['last_update'] = updated_data[entity][-1][0]
+    
+    for chart_chunk in chunk_list(new_charts, CHUNK_SIZE):
+        if chart_chunk:
+            print(f"Creating chunk of {len(chart_chunk)} new charts...")
+            chart_ids = create_charts(chart_chunk)
+            
+            for entity, chart_id in zip(
+                [chart['title'].split(': ')[1] for chart in chart_chunk],
+                chart_ids
+            ):
+                metadata[entity] = {
+                    'subsets_id': chart_id,
+                    'last_update': next(
+                        chart['data'][-1][0] 
+                        for chart in chart_chunk 
+                        if chart['title'].split(': ')[1] == entity
+                    )
                 }
-                metadata[entity]['last_update'] = updated_data[entity][-1][0]
     
-    if new_charts:
-        print(f"Creating {len(new_charts)} new charts...")
-        chart_ids = create_charts(new_charts)
-        
-        for entity, chart_id in zip(new_entities, chart_ids):
-            metadata[entity] = {
-                'subsets_id': chart_id,
-                'last_update': new_charts[0]['data'][-1][0]
-            }
-    
-    if updates:
-        print(f"Updating {len(updates)} existing charts...")
-        update_chart_data(updates)
+    update_chunks = chunk_list(list(updates.items()), CHUNK_SIZE)
+    for update_chunk in update_chunks:
+        if update_chunk:
+            print(f"Updating chunk of {len(update_chunk)} existing charts...")
+            update_chart_data(dict(update_chunk))
     
     save_chart_metadata(metadata, metadata_file)
     print("Chart management completed successfully")
