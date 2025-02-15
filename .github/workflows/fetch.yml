@@ -1,0 +1,26 @@
+name: Fetch Wikipedia Page Views
+
+on:
+  schedule:
+    - cron: '0 1 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fetch-pageviews:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: nathansnellaert/subsets-ghactions-template@main
+        with:
+          run_command: |
+            poetry run python -u src/main.py --start-date "2024-01-01" &&
+            poetry run python -u src/manage_charts.py --top-n 10000
+          api_key: ${{ secrets.SUBSETS_API_KEY }}
+          gcp_credentials: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
+          commit_after_run: true
+        env:
+          BUCKET_NAME: subsets-datasets
+          DATA_DIR: data
+          GOOGLE_CLOUD_PROJECT: subsets
