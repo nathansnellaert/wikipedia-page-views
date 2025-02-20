@@ -141,7 +141,8 @@ def main(start_date: str):
     
     # Combine all needed partitions
     all_remaining_partitions = set().union(*remaining_partitions_by_locale.values())
-    
+    all_remaining_partitions = sorted(all_remaining_partitions)
+
     client = storage.Client()
     bucket = client.bucket(bucket_name)
     current_date = datetime.now()
