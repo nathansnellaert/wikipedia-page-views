@@ -1,182 +1,171 @@
+# todo add multi-locale support
 from pathlib import Path
 import os
+import pandas as pd
 from google.cloud import bigquery
-from typing import Dict, List
-import argparse
 from subsetsio import SubsetsClient
-import json
 import unicodedata
+import argparse
+import json
+from datetime import datetime, timedelta
 
 SUBSETS_API_KEY = os.getenv('SUBSETS_API_KEY')
 DATA_DIR = Path(os.getenv('DATA_DIR', 'data'))
 PROJECT_ID = os.environ['GOOGLE_CLOUD_PROJECT']
-ICON_URL = (
-    'https://storage.googleapis.com/subsets-public-assets/source_logos/wikimedia.png'
-)
+ICON_URL = 'https://storage.googleapis.com/subsets-public-assets/source_logos/wikimedia.png'
 
 def normalize_text(text: str) -> str:
-    """Normalize Unicode characters in text to their closest ASCII representation."""
-    # Normalize to NFKD form and encode as ASCII, dropping non-ASCII characters
     normalized = unicodedata.normalize('NFKD', text)
     return normalized.encode('ASCII', 'ignore').decode('ASCII')
 
-def get_last_available_date() -> str:
-    query = (
-        """
-    SELECT MAX(partition_id) as latest_date
-    FROM `{}.datasets.INFORMATION_SCHEMA.PARTITIONS` 
-    WHERE table_name = 'wikipedia_daily_pageviews'
+def get_last_available_month() -> str:
+    query = f"""
+    SELECT FORMAT_DATE('%Y-%m', MAX(DATE_TRUNC(PARSE_DATE('%Y%m%d', partition_id), MONTH))) as latest_month
+    FROM `{PROJECT_ID}.datasets.INFORMATION_SCHEMA.PARTITIONS` 
+    WHERE table_name = 'wikipedia_daily_pageviews_nl'
     """
-        .format(PROJECT_ID))
     client = bigquery.Client()
-    query_job = client.query(query)
-    result = next(iter(query_job))
-    return result.latest_date
+    return next(iter(client.query(query))).latest_month
 
-def get_top_pages(limit: int) -> List[str]:
-    latest_date = get_last_available_date()
-    query = (
-        """
-    WITH latest_data AS (
-        SELECT entity, page_id, views_sum,
-               ROW_NUMBER() OVER (ORDER BY views_sum DESC) as rank
-        FROM `{}.datasets.wikipedia_daily_pageviews`
-        WHERE date = PARSE_DATE('%Y%m%d', @latest_date)
+def get_top_pages(limit: int) -> pd.DataFrame:
+    latest_month = get_last_available_month()
+    query = f"""
+    WITH monthly_data AS (
+        SELECT entity, page_id, 
+               SUM(views_sum) as monthly_views,
+               ROW_NUMBER() OVER (ORDER BY SUM(views_sum) DESC) as rank
+        FROM `{PROJECT_ID}.datasets.wikipedia_daily_pageviews_nl`
+        WHERE FORMAT_DATE('%Y-%m', date) = @latest_month
             AND NOT STARTS_WITH(entity, 'List')
             AND LENGTH(entity) > 2
+        GROUP BY entity, page_id
     )
-    SELECT entity, page_id
-    FROM latest_data
+    SELECT entity, CAST(page_id as STRING) as page_id
+    FROM monthly_data
     WHERE rank <= @limit
     """
-        .format(PROJECT_ID))
+    client = bigquery.Client()
     job_config = bigquery.QueryJobConfig(
         query_parameters=[
             bigquery.ScalarQueryParameter('limit', 'INT64', limit),
-            bigquery.ScalarQueryParameter('latest_date', 'STRING', latest_date)
+            bigquery.ScalarQueryParameter('latest_month', 'STRING', latest_month)
         ])
-    client = bigquery.Client()
-    query_job = client.query(query, job_config=job_config)
-    bytes_processed = query_job.total_bytes_processed if query_job.total_bytes_processed else 0
-    print(f'Query processed {bytes_processed / 1024 / 1024 / 1024:.2f} GB')
-    return [row.entity for row in query_job]
+    return client.query(query, job_config=job_config).to_dataframe()
 
-def get_bulk_daily_data(entities: List[str]) -> List[List]:
-    query = (
-        """
-    SELECT date, entity, views_sum
-    FROM `{}.datasets.wikipedia_daily_pageviews`
-    WHERE entity IN UNNEST(@entities)
-        AND date < CURRENT_DATE()
-    ORDER BY date
-    """
-        .format(PROJECT_ID))
-    parameters = [bigquery.ArrayQueryParameter('entities', 'STRING', entities)]
-    job_config = bigquery.QueryJobConfig(query_parameters=parameters)
-    client = bigquery.Client()
-    query_job = client.query(query, job_config=job_config)
-    bytes_processed = query_job.total_bytes_processed if query_job.total_bytes_processed else 0
-    print(f'Query processed {bytes_processed / 1024 / 1024 / 1024:.2f} GB')
-    entity_data = {}
-    for row in query_job:
-        if row.entity not in entity_data:
-            entity_data[row.entity] = []
-        entity_data[row.entity].append([row.date.strftime('%Y-%m-%d'), row.views_sum])
-    return entity_data
-
-def generate_chart_config(entity: str, data: List[List]) -> Dict:
-    normalized_entity = normalize_text(entity.replace('_', ' '))
+def get_bulk_monthly_data(entities: list, start_month: str = None, end_month: str = None) -> dict:
+    date_filter = "TRUE"
+    query_params = [bigquery.ArrayQueryParameter('entities', 'STRING', entities)]
     
+    if start_month:
+        date_filter = f"FORMAT_DATE('%Y-%m', date) >= @start_month AND FORMAT_DATE('%Y-%m', date) <= @end_month"
+        query_params.extend([
+            bigquery.ScalarQueryParameter('start_month', 'STRING', start_month),
+            bigquery.ScalarQueryParameter('end_month', 'STRING', end_month)
+        ])
+
+    query = f"""
+    SELECT 
+        FORMAT_DATE('%Y-%m', DATE_TRUNC(date, MONTH)) as month,
+        entity,
+        SUM(views_sum) as monthly_views
+    FROM `{PROJECT_ID}.datasets.wikipedia_daily_pageviews_nl`
+    WHERE entity IN UNNEST(@entities)
+        AND {date_filter}
+    GROUP BY month, entity
+    ORDER BY month
+    """
+    client = bigquery.Client()
+    job_config = bigquery.QueryJobConfig(query_parameters=query_params)
+    df = client.query(query, job_config=job_config).to_dataframe()
+    
+    # Group by entity and month
+    result = {}
+    for entity, group in df.groupby('entity'):
+        monthly_sums = group.set_index('month')['monthly_views']
+        result[entity] = [[m, int(v)] for m, v in monthly_sums.items()]
+    
+    return result
+
+def generate_chart_config(entity: str, data: list) -> dict:
+    normalized_entity = normalize_text(entity.replace('_', ' '))
     return {
         'data': data,
         'metadata': {
             'type': 'line',
             'title': f'Wikipedia Popularity of {normalized_entity}',
             'icon': ICON_URL,
-            'subtitle': 'Daily page views on English Wikipedia',
-            'description': f'Daily page views for the Wikipedia article on {normalized_entity}',
+            'subtitle': 'Monthly page views on English Wikipedia',
+            'description': f'Monthly page views for the Wikipedia article on {normalized_entity}',
             'dataset_configs': [{
                 'label': f'{normalized_entity} page views',
                 'color': '#2563eb',
             }],
         },
-        "tags": {
-            "source": "wikipedia-page-views"
-        }
+        "tags": {"source": "wikipedia-page-views"}
     }
+
+def read_last_update_month(last_update_file: Path) -> str:
+    if last_update_file.exists():
+        with open(last_update_file) as f:
+            return f.read().strip()
+    return None
+
+def write_last_update_month(last_update_file: Path, month: str):
+    with open(last_update_file, 'w') as f:
+        f.write(month)
 
 def main(top_n: int, regenerate_top: bool):
     if not SUBSETS_API_KEY:
         raise ValueError('SUBSETS_API_KEY environment variable must be set')
     
-    subsets = SubsetsClient(api_key=SUBSETS_API_KEY)
     DATA_DIR.mkdir(exist_ok=True)
-    metadata_file = DATA_DIR / 'chart_metadata.json'
+    tracking_file = DATA_DIR / 'entities_to_track.csv'
+    chart_mapping_file = DATA_DIR / 'chart_mapping.json'
     last_update_file = DATA_DIR / 'last_update.txt'
     
-    metadata = {}
-    if metadata_file.exists():
-        with open(metadata_file, 'r') as f:
-            metadata = json.load(f)
+    # Load or generate tracking data
+    if tracking_file.exists() and not regenerate_top:
+        tracking_df = pd.read_csv(tracking_file)
+    else:
+        tracking_df = get_top_pages(top_n)
+        tracking_df.to_csv(tracking_file, index=False)
+        
+    # Process new and existing entities
+    subsets = SubsetsClient(api_key=SUBSETS_API_KEY)
+    latest_available_month = get_last_available_month()
+    last_update_month = read_last_update_month(last_update_file)
     
-    entities_to_track = set(metadata.keys())
-    if not metadata or regenerate_top:
-        print(f'Fetching top {top_n} pages from BigQuery...')
-        entities_to_track.update(get_top_pages(top_n))
-    
-    entities_to_track = list(entities_to_track)
-    if not entities_to_track:
-        print('No entities to track')
+    if last_update_month == latest_available_month:
+        print('No new data available')
         return
     
-    latest_date = get_last_available_date()
-    last_processed_date = None
-    if last_update_file.exists():
-        with open(last_update_file, 'r') as f:
-            last_processed_date = f.read().strip()
-    
-    if not last_processed_date or last_processed_date < latest_date:
-        new_entities = [e for e in entities_to_track if e not in metadata]
-        existing_entities = [e for e in entities_to_track if e in metadata]
-        
-        if new_entities:
-            print(f'Fetching data for {len(new_entities)} new entities...')
-            new_entity_data = get_bulk_daily_data(new_entities)
-            charts_to_create = []
-            
-            for entity in new_entities:
-                if entity in new_entity_data and new_entity_data[entity]:
-                    chart_config = generate_chart_config(entity, new_entity_data[entity])
-                    charts_to_create.append(chart_config)
-            
-            if charts_to_create:
-                print(f'Creating {len(charts_to_create)} new charts...')
-                chart_ids = subsets.create(charts_to_create)
-                for entity, chart_id in zip(new_entities, chart_ids):
-                    metadata[entity] = {'chart_id': chart_id}
-        
-        if existing_entities:
-            print(f'Fetching updates for {len(existing_entities)} existing entities...')
-            updated_data = get_bulk_daily_data(existing_entities)
-            data_updates = {
-                metadata[entity]['chart_id']: updated_data[entity]
-                for entity in existing_entities
-                if entity in updated_data and updated_data[entity]
-            }
-            
-            if data_updates:
-                print(f'Updating {len(data_updates)} charts...')
-                subsets.add_data_rows(data_updates)
-        
-        with open(last_update_file, 'w') as f:
-            f.write(latest_date)
+    charts_exist = chart_mapping_file.exists()
+    if charts_exist:
+        with open(chart_mapping_file) as f:
+            chart_mapping = json.load(f)
+
+        new_data = get_bulk_monthly_data(tracking_df.entity.tolist(), start_month=last_update_month, end_month=latest_available_month)        
+        data_updates = {}
+        # return as dictionary, where key is the chart_id on subsets, and value is the data
+        for entity, data in new_data.items():
+            data_updates[chart_mapping[entity]] = data
+
+        subsets.add_data_rows(data_updates)
     else:
-        print('No updates needed - already processed latest data')
+        all_data = get_bulk_monthly_data(tracking_df.entity.tolist(), end_month=latest_available_month)
+        charts = []
+        for entity, data in all_data.items():
+            chart = generate_chart_config(entity, data)
+            if len(chart['data']) > 10:
+                charts.append(chart)
     
-    with open(metadata_file, 'w') as f:
-        json.dump(metadata, f)
-    
-    print('Chart management completed successfully')
+        chart_ids = subsets.create(charts)
+        chart_mapping = dict(zip(all_data.keys(), chart_ids))
+        with open(chart_mapping_file, 'w') as f:
+            json.dump(chart_mapping, f)
+
+    # set last update month to latest available month
+    write_last_update_month(last_update_file, latest_available_month)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Manage Wikipedia pageview charts')
