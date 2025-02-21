@@ -15,7 +15,7 @@ jobs:
       - uses: nathansnellaert/subsets-ghactions-template@main
         with:
           run_command: |
-            poetry run python -u src/main.py --start-date "2015-01-01" &&
+            poetry run python -u src/main.py --start-date "2016-01-01" &&
             poetry run python -u src/manage_charts.py --top-n 10000
           api_key: ${{ secrets.SUBSETS_API_KEY }}
           gcp_credentials: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
