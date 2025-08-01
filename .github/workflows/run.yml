@@ -32,9 +32,24 @@ jobs:
         # Install dependencies using uv
         uv sync
     
-    - name: Run connector
+    - name: Run connector with timeout
+      id: run
       run: |
-        uv run python main.py
+        # Run with 5h 50m timeout, capturing exit code
+        timeout --signal=TERM --kill-after=30s 5h50m uv run python main.py || EXIT_CODE=$?
+        
+        # Check if it was a timeout (exit code 124)
+        if [ "$EXIT_CODE" = "124" ]; then
+          echo "timeout=true" >> $GITHUB_OUTPUT
+          echo "⏰ Connector timed out after 5h 50m"
+          exit 124
+        elif [ -n "$EXIT_CODE" ] && [ "$EXIT_CODE" != "0" ]; then
+          echo "❌ Connector failed with exit code $EXIT_CODE"
+          exit $EXIT_CODE
+        else
+          echo "timeout=false" >> $GITHUB_OUTPUT
+          echo "✅ Connector completed successfully"
+        fi
       env:
         RUN_ID: ${{ github.run_id }}
         PYTHONUNBUFFERED: "1"
@@ -46,6 +61,7 @@ jobs:
         ENABLE_HTTP_CACHE: "false" 
         WRITE_SNAPSHOT: "false"
         DATA_COLLECTION_START_DATE: "2024-01-01"
+      continue-on-error: true
     
     - name: Commit state changes
       if: always()
@@ -59,11 +75,31 @@ jobs:
           
           # Check if there are changes to commit
           if ! git diff --cached --quiet; then
-            git commit -m "Update state from run ${{ github.run_id }}"
+            # Include timeout info in commit message if applicable
+            if [ "${{ steps.run.outputs.timeout }}" = "true" ]; then
+              git commit -m "Update state from run ${{ github.run_id }} (timed out after 5h50m)"
+            else
+              git commit -m "Update state from run ${{ github.run_id }}"
+            fi
             git push
           else
             echo "No state changes to commit"
           fi
         else
           echo "No .state directory found"
-        fi 
+        fi
+    
+    - name: Trigger rerun if timeout
+      if: steps.run.outputs.timeout == 'true'
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          console.log('🔄 Triggering workflow rerun due to timeout...');
+          await github.rest.actions.createWorkflowDispatch({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            workflow_id: 'run.yml',
+            ref: 'main'
+          });
+          console.log('✅ Rerun triggered successfully'); 
