@@ -1,0 +1,5 @@
+dev.py
+__pycache__/
+*.pyc
+.pytest_cache/
+data
