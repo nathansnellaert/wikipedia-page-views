@@ -25,7 +25,7 @@ jobs:
       env:
         PYTHONUNBUFFERED: 1
         RUN_ID: ${{ github.run_id }}
-        STORAGE_BACKEND: iceberg
+        CATALOG_TYPE: subsets
         SUBSETS_API_KEY: ${{ secrets.SUBSETS_API_KEY }}
         SUBSETS_CATALOG_URL: ${{ secrets.SUBSETS_CATALOG_URL }}
         SUBSETS_WAREHOUSE: ${{ secrets.SUBSETS_WAREHOUSE }}

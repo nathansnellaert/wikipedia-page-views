@@ -3,20 +3,19 @@ from typing import List, Optional, Dict
 
 CORE_ENV_VARS = [
     "RUN_ID",
-    "STORAGE_BACKEND"
+    "CATALOG_TYPE"
 ]
 
 def validate_environment(required: Optional[List[str]] = None) -> Dict[str, str]:
     if required is None:
         required = CORE_ENV_VARS.copy()
     
-    # Add R2 vars if using R2 storage
-    if os.environ.get('STORAGE_BACKEND') == 'r2':
+    # Add Subsets vars if using subsets catalog
+    if os.environ.get('CATALOG_TYPE') == 'subsets':
         required.extend([
-            "R2_ACCESS_KEY_ID",
-            "R2_SECRET_ACCESS_KEY", 
-            "R2_ENDPOINT_URL",
-            "R2_BUCKET_NAME"
+            "SUBSETS_CATALOG_URL",
+            "SUBSETS_API_KEY",
+            "SUBSETS_WAREHOUSE"
         ])
     
     missing = [var for var in required if var not in os.environ]
@@ -35,9 +34,6 @@ def is_github_actions() -> bool:
 
 def is_dev_mode() -> bool:
     return os.environ.get('DEV_MODE', '').lower() == 'true'
-
-def should_write_snapshot() -> bool:
-    return os.environ.get('WRITE_SNAPSHOT', '').lower() == 'true'
 
 def get_run_id() -> str:
     return os.environ['RUN_ID']
