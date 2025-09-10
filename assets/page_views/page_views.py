@@ -48,7 +48,7 @@ def process_page_views() -> pa.Table:
             grouped_table = day_table.group_by(['date', 'locale', 'entity', 'page_id']).aggregate([('views', 'sum')])
             
             # Upload data for this date
-            upload_data(grouped_table, "page_views")
+            upload_data(grouped_table, "wikipedia_page_views")
             
             # Update state after successful upload
             save_state("page_views", {'last_processed_date': current_date.strftime('%Y-%m-%d')})
