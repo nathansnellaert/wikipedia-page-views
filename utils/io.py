@@ -84,7 +84,7 @@ class SubsetsStorage:
         
         # Build table name with connector prefix
         connector = os.environ['CONNECTOR_NAME']
-        table_name = f"{connector}_{dataset_name}"
+        table_name = f"{connector}"
         
         # Use tuple format to separate namespace and table name
         table_identifier = ("subsets", table_name)
@@ -98,7 +98,7 @@ class SubsetsStorage:
             table = self.catalog.create_table(
                 identifier=table_identifier,
                 schema=data.schema,
-                properties={'connector': connector}
+                properties={'workspace.connector': connector}
             )
         
         # Append data to the table
