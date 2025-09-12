@@ -31,8 +31,8 @@ class LocalStorage:
             logger.warning(f"No data to upload for {dataset_name}")
             return ""
         
-        connector = os.environ['CONNECTOR_NAME']
-        table_name = f"{connector}_{dataset_name}"
+        # Use dataset_name as-is (should already include prefix from caller)
+        table_name = dataset_name
         
         # Simple append to parquet files
         table_path = self.base_path / table_name
@@ -49,8 +49,8 @@ class LocalStorage:
     
     def load_asset(self, connector: str, asset_name: str, run_id: str = None) -> pa.Table:
         _ = run_id  # Not used
-        table_name = f"{connector}_{asset_name}"
-        table_path = self.base_path / table_name
+        # Use asset_name directly (should already include prefix)
+        table_path = self.base_path / asset_name
         
         if not table_path.exists():
             raise FileNotFoundError(f"No data found at {table_path}")
@@ -82,9 +82,11 @@ class SubsetsStorage:
             logger.warning(f"No data to upload for {dataset_name}")
             return ""
         
-        # Build table name with connector prefix
+        # Use dataset_name as the table name (should already include prefix from caller)
+        table_name = dataset_name
+        
+        # Get connector name for metadata
         connector = os.environ['CONNECTOR_NAME']
-        table_name = f"{connector}"
         
         # Use tuple format to separate namespace and table name
         table_identifier = ("subsets", table_name)
@@ -118,8 +120,8 @@ class SubsetsStorage:
     
     def load_asset(self, connector: str, asset_name: str, run_id: str = None) -> pa.Table:
         _ = run_id  # Not used with Iceberg
-        table_name = f"{connector}_{asset_name}"
-        table_identifier = ("subsets", table_name)
+        # Use asset_name directly (should already include prefix)
+        table_identifier = ("subsets", asset_name)
         
         try:
             table = self.catalog.load_table(table_identifier)
