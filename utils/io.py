@@ -8,85 +8,68 @@ import pyarrow.compute as pc
 import logging
 import requests
 from pyiceberg.catalog.rest import RestCatalog
+from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.exceptions import NoSuchTableError, CommitFailedException
 from . import debug
 from .environment import get_data_dir
 
 logger = logging.getLogger(__name__)
 
-# Storage backend singleton
-_storage_backend = None
+# Catalog singleton for Iceberg operations
+_catalog = None
 
 
-class LocalStorage:
-    """Simple Parquet storage for local development (no Iceberg dependencies)"""
+class UnifiedStorage:
+    """Unified Iceberg storage for both local and remote catalogs"""
     
     def __init__(self):
-        self.base_path = Path(get_data_dir())
-        self.base_path.mkdir(parents=True, exist_ok=True)
-        logger.info(f"LocalStorage initialized at {self.base_path}")
+        self.catalog = self._get_catalog()
+        catalog_type = os.environ['CATALOG_TYPE']
+        logger.info(f"UnifiedStorage initialized with {catalog_type} catalog")
     
-    def upload_data(self, data: pa.Table, dataset_name: str) -> str:
+    def _get_catalog(self):
+        """Get or create the Iceberg catalog connection based on CATALOG_TYPE"""
+        global _catalog
+        
+        if _catalog is None:
+            catalog_type = os.environ['CATALOG_TYPE']
+            
+            if catalog_type == 'local':
+                # Use SQLite-based catalog for local development
+                catalog_path = os.environ.get('CATALOG_PATH', os.path.join(get_data_dir(), 'catalog'))
+                Path(catalog_path).mkdir(parents=True, exist_ok=True)
+                
+                _catalog = SqlCatalog(
+                    name="local",
+                    uri=f"sqlite:///{catalog_path}/catalog.db",
+                    warehouse=f"file://{catalog_path}/warehouse"
+                )
+                logger.info(f"Local catalog initialized at {catalog_path}")
+                
+            elif catalog_type == 'subsets':
+                # Use REST catalog for Subsets platform
+                _catalog = RestCatalog(
+                    name="subsets",
+                    uri=os.environ['SUBSETS_CATALOG_URL'],
+                    token=os.environ['SUBSETS_API_KEY'],
+                    warehouse=os.environ['SUBSETS_WAREHOUSE']
+                )
+                logger.info(f"Subsets REST catalog initialized")
+                
+            else:
+                raise ValueError(f"Unknown CATALOG_TYPE: {catalog_type}. Use 'local' or 'subsets'")
+        
+        return _catalog
+    
+    def upload_data(self, data: pa.Table, dataset_name: str, partition: str = None) -> str:
+        _ = partition  # Not used with Iceberg, kept for compatibility
         if len(data) == 0:
             logger.warning(f"No data to upload for {dataset_name}")
             return ""
         
-        # Use dataset_name as-is (should already include prefix from caller)
-        table_name = dataset_name
-        
-        # Simple append to parquet files
-        table_path = self.base_path / table_name
-        table_path.mkdir(parents=True, exist_ok=True)
-        
-        # Generate unique filename based on timestamp
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
-        file_path = table_path / f"{timestamp}.parquet"
-        
-        pq.write_table(data, file_path)
-        logger.info(f"Saved {len(data)} rows to {file_path}")
-        
-        return str(file_path)
-    
-    def load_asset(self, connector: str, asset_name: str, run_id: str = None) -> pa.Table:
-        _ = run_id  # Not used
-        # Use asset_name directly (should already include prefix)
-        table_path = self.base_path / asset_name
-        
-        if not table_path.exists():
-            raise FileNotFoundError(f"No data found at {table_path}")
-        
-        # Read all parquet files in the directory
-        parquet_files = list(table_path.glob("*.parquet"))
-        if not parquet_files:
-            raise FileNotFoundError(f"No parquet files found in {table_path}")
-        
-        # Read and concatenate all files
-        tables = [pq.read_table(f) for f in parquet_files]
-        return pa.concat_tables(tables) if len(tables) > 1 else tables[0]
-
-
-class SubsetsStorage:
-    """Iceberg catalog storage for Subsets platform"""
-    
-    def __init__(self):
-        self.catalog = RestCatalog(
-            name="subsets",
-            uri=os.environ['SUBSETS_CATALOG_URL'],
-            token=os.environ['SUBSETS_API_KEY'],
-            warehouse=os.environ['SUBSETS_WAREHOUSE']
-        )
-        logger.info(f"SubsetsStorage initialized with REST catalog")
-    
-    def upload_data(self, data: pa.Table, dataset_name: str) -> str:
-        if len(data) == 0:
-            logger.warning(f"No data to upload for {dataset_name}")
-            return ""
-        
-        # Use dataset_name as the table name (should already include prefix from caller)
-        table_name = dataset_name
-        
-        # Get connector name for metadata
+        # Build table name with connector prefix
         connector = os.environ['CONNECTOR_NAME']
+        table_name = f"{connector}_{dataset_name}"
         
         # Use tuple format to separate namespace and table name
         table_identifier = ("subsets", table_name)
@@ -97,10 +80,17 @@ class SubsetsStorage:
             logger.info(f"Found existing table: subsets.{table_name}")
         except NoSuchTableError:
             logger.info(f"Creating new table: subsets.{table_name}")
+            # Ensure namespace exists for local catalog
+            if os.environ.get('CATALOG_TYPE') == 'local':
+                try:
+                    self.catalog.create_namespace("subsets")
+                except Exception:
+                    pass  # Namespace may already exist
+            
             table = self.catalog.create_table(
                 identifier=table_identifier,
                 schema=data.schema,
-                properties={'workspace.connector': connector}
+                properties={'connector': connector}
             )
         
         # Append data to the table
@@ -109,6 +99,7 @@ class SubsetsStorage:
             logger.info(f"Appended {len(data)} rows to subsets.{table_name}")
         except CommitFailedException as e:
             if "DataInvalid" in str(e):
+                # Default to true - continue on snapshot mismatch errors
                 if os.environ.get('CONTINUE_ON_SNAPSHOT_ERROR', 'false').lower() == 'true':
                     logger.debug(f"Snapshot mismatch for {table_name}, continuing (data likely already exists)")
                 else:
@@ -120,8 +111,8 @@ class SubsetsStorage:
     
     def load_asset(self, connector: str, asset_name: str, run_id: str = None) -> pa.Table:
         _ = run_id  # Not used with Iceberg
-        # Use asset_name directly (should already include prefix)
-        table_identifier = ("subsets", asset_name)
+        table_name = f"{connector}_{asset_name}"
+        table_identifier = ("subsets", table_name)
         
         try:
             table = self.catalog.load_table(table_identifier)
@@ -133,29 +124,29 @@ class SubsetsStorage:
 
 
 def _get_storage():
-    """Get or create the storage backend based on CATALOG_TYPE"""
-    global _storage_backend
+    """Get or create the unified storage backend"""
+    global _catalog
     
-    if _storage_backend is None:
-        catalog_type = os.environ['CATALOG_TYPE']
-        
-        if catalog_type == 'local':
-            _storage_backend = LocalStorage()
-        elif catalog_type == 'subsets':
-            _storage_backend = SubsetsStorage()
-        else:
-            raise ValueError(f"Unknown CATALOG_TYPE: {catalog_type}. Use 'local' or 'subsets'")
+    # Reset catalog if switching between environments
+    if _catalog is not None:
+        # Check if catalog type changed
+        current_type = os.environ['CATALOG_TYPE']
+        if hasattr(_catalog, 'name'):
+            if (_catalog.name == 'local' and current_type == 'subsets') or \
+               (_catalog.name == 'subsets' and current_type == 'local'):
+                _catalog = None
     
-    return _storage_backend
+    return UnifiedStorage()
 
 
 # Public API functions - thin wrappers around storage backend
-def upload_data(data: pa.Table, dataset_name: str) -> str:
+def upload_data(data: pa.Table, dataset_name: str, partition: str = None) -> str:
     """Upload data to configured storage backend
     
     Args:
         data: The data to upload as a PyArrow table
         dataset_name: Logical dataset name (e.g., "page_views")
+        partition: Optional partition path (e.g., "2024/01/15")
     
     Returns:
         str: The storage path where data was saved
@@ -167,7 +158,7 @@ def upload_data(data: pa.Table, dataset_name: str) -> str:
     
     # Upload data
     storage = _get_storage()
-    key = storage.upload_data(data, dataset_name)
+    key = storage.upload_data(data, dataset_name, partition)
     
     # Log data output
     schema_info = [
@@ -176,6 +167,8 @@ def upload_data(data: pa.Table, dataset_name: str) -> str:
     ]
     
     metrics = {}
+    if partition:
+        metrics['partition'] = partition
     
     debug.log_data_output(
         dataset_name=dataset_name,
