@@ -12,7 +12,7 @@ from assets.page_views.page_views import process_page_views
 
 
 def main():
-    validate_environment(required=["RUN_ID"])
+    validate_environment()
     needs_continuation = process_page_views()
 
     # Exit with code 2 to signal workflow should re-trigger

@@ -38,6 +38,7 @@ jobs:
         PYTHONUNBUFFERED: 1
         RUN_ID: ${{ github.run_id }}
         ENVIRONMENT: prod
+        DATA_DIR: subsets
         R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
         R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
         R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
