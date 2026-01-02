@@ -29,7 +29,7 @@ from . import debug
 class MemoryProfiler:
     """External memory profiler that monitors a subprocess from the parent."""
 
-    def __init__(self, pid: int, log_dir: Path, interval: float = 0.5):
+    def __init__(self, pid: int, log_dir: Path, interval: float = 10.0):
         self.pid = pid
         self.log_file = log_dir / "memory.csv"
         self.interval = interval

@@ -150,7 +150,7 @@ def upload_data(data: pa.Table, dataset_name: str, metadata: dict = None, mode: 
 def load_state(asset: str) -> dict:
     """Load state for an asset.
 
-    In local mode: reads from .state/{environment}/{asset}.json
+    In local mode: reads from DATA_DIR/state/{asset}.json (mirrors R2 structure)
     In cloud mode: reads from R2 {connector}/data/state/{asset}.json
     """
     if is_cloud_mode():
@@ -161,8 +161,7 @@ def load_state(asset: str) -> dict:
             return {}
         return json.loads(data.decode('utf-8'))
     else:
-        environment = os.environ.get('ENVIRONMENT', 'dev')
-        state_file = Path(".state") / environment / f"{asset}.json"
+        state_file = Path(get_data_dir()) / "state" / f"{asset}.json"
 
         if state_file.exists():
             with open(state_file, 'r') as f:
@@ -173,7 +172,7 @@ def load_state(asset: str) -> dict:
 def save_state(asset: str, state_data: dict) -> str:
     """Save state for an asset.
 
-    In local mode: writes to .state/{environment}/{asset}.json
+    In local mode: writes to DATA_DIR/state/{asset}.json (mirrors R2 structure)
     In cloud mode: writes to R2 {connector}/data/state/{asset}.json
     """
     # Load old state for comparison (for debug logging)
@@ -194,8 +193,7 @@ def save_state(asset: str, state_data: dict) -> str:
         debug.log_state_change(asset, old_state, state_data)
         return uri
     else:
-        environment = os.environ.get('ENVIRONMENT', 'dev')
-        state_dir = Path(".state") / environment
+        state_dir = Path(get_data_dir()) / "state"
         state_dir.mkdir(parents=True, exist_ok=True)
 
         state_file = state_dir / f"{asset}.json"

@@ -153,6 +153,28 @@ def object_exists(key: str) -> bool:
         return False
 
 
+def list_keys(prefix: str) -> list[str]:
+    """List all keys in R2 with a given prefix.
+
+    Args:
+        prefix: Key prefix to filter by (e.g., 'connector/data/raw/')
+
+    Returns:
+        List of full key paths matching the prefix
+    """
+    client = get_s3_client()
+    bucket = get_bucket_name()
+
+    keys = []
+    paginator = client.get_paginator('list_objects_v2')
+
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        for obj in page.get('Contents', []):
+            keys.append(obj['Key'])
+
+    return keys
+
+
 def get_storage_options() -> dict:
     """Get storage options for deltalake S3 writes.
 
