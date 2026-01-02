@@ -2,13 +2,11 @@ import os
 import json
 import hashlib
 import httpx
+import time
 from pathlib import Path
-from typing import Optional, Dict, Any, Union
+from typing import Optional, Dict, Union
 from datetime import datetime
-import logging
 from . import debug
-
-logger = logging.getLogger(__name__)
 
 _client = None
 _client_config = {
@@ -47,9 +45,7 @@ class CacheManager:
             headers = metadata.get("headers", {})
             headers.pop("content-encoding", None)
             headers.pop("transfer-encoding", None)
-                
-            debug.log_http_request(method, url, metadata["status_code"], cached=True)
-            
+
             return httpx.Response(
                 status_code=metadata["status_code"],
                 headers=headers,
@@ -79,9 +75,7 @@ class CacheManager:
         
         with open(metadata_file, 'w') as f:
             json.dump(metadata, f, indent=2)
-            
-        elapsed = response.elapsed.total_seconds() if hasattr(response, 'elapsed') else None
-        debug.log_http_request(method, url, response.status_code, duration_ms=int(elapsed * 1000) if elapsed else None)
+
 
 class CachedClient:
     def __init__(self, client: httpx.Client, cache_manager: CacheManager):
@@ -89,32 +83,17 @@ class CachedClient:
         self.cache = cache_manager
         
     def request(self, method: str, url: str, **kwargs) -> httpx.Response:
-        start_time = datetime.now()
-        error = None
-        response = None
-        cached = False
-        
-        try:
-            if _client_config['cache_enabled']:
-                cached_response = self.cache.get(method, url, **kwargs)
-                if cached_response:
-                    cached = True
-                    return cached_response
-            
-            response = self.client.request(method, url, **kwargs)
-            
-            if _client_config['cache_enabled'] and response.status_code < 400:
-                self.cache.save(method, url, response, **kwargs)
-                
-            return response
-        except Exception as e:
-            error = str(e)
-            raise
-        finally:
-            if not _client_config['cache_enabled'] or not cached:
-                elapsed = (datetime.now() - start_time).total_seconds()
-                debug.log_http_request(method, url, response.status_code if response else None,
-                                       duration_ms=int(elapsed * 1000), error=error)
+        if _client_config['cache_enabled']:
+            cached_response = self.cache.get(method, url, **kwargs)
+            if cached_response:
+                return cached_response
+
+        response = self.client.request(method, url, **kwargs)
+
+        if _client_config['cache_enabled'] and response.status_code < 400:
+            self.cache.save(method, url, response, **kwargs)
+
+        return response
     
     def get(self, url: str, **kwargs) -> httpx.Response:
         return self.request("GET", url, **kwargs)
@@ -155,21 +134,39 @@ def _get_or_create_client(**overrides) -> Union[httpx.Client, CachedClient]:
             
     return _client
 
-def get(url: str, **kwargs) -> httpx.Response:
+def _logged_request(method: str, url: str, **kwargs) -> httpx.Response:
+    """Execute HTTP request with logging if ENABLE_LOGGING is set."""
     client = _get_or_create_client()
-    return client.get(url, **kwargs)
+    start = time.time()
+    error = None
+    status = None
+
+    try:
+        response = client.request(method, url, **kwargs)
+        status = response.status_code
+        return response
+    except Exception as e:
+        error = str(e)
+        raise
+    finally:
+        duration_ms = int((time.time() - start) * 1000)
+        debug.log_http_request(method, url, status, duration_ms=duration_ms, error=error)
+
+
+def get(url: str, **kwargs) -> httpx.Response:
+    return _logged_request("GET", url, **kwargs)
+
 
 def post(url: str, **kwargs) -> httpx.Response:
-    client = _get_or_create_client()
-    return client.post(url, **kwargs)
+    return _logged_request("POST", url, **kwargs)
+
 
 def put(url: str, **kwargs) -> httpx.Response:
-    client = _get_or_create_client()
-    return client.put(url, **kwargs)
+    return _logged_request("PUT", url, **kwargs)
+
 
 def delete(url: str, **kwargs) -> httpx.Response:
-    client = _get_or_create_client()
-    return client.delete(url, **kwargs)
+    return _logged_request("DELETE", url, **kwargs)
 
 def get_client(**overrides) -> Union[httpx.Client, CachedClient]:
     return _get_or_create_client(**overrides)
