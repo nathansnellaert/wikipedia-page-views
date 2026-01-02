@@ -1,0 +1,20 @@
+.state/
+!.state/prod/
+.venv/
+dev/
+dev.py
+http_cache/
+logs/
+subsets/
+data/
+__pycache__/
+*.pyc
+
+# Synced from template
+
+# Cache and logs
+# Development files
+# Output data (subsets is published, raw is local cache)
+# Python environment
+# State (keep prod state for tracking)
+data/raw/
