@@ -93,7 +93,10 @@ def run() -> bool:
             elapsed = time.time() - start_time
             if elapsed >= GH_ACTIONS_MAX_RUN_SECONDS:
                 print(f"\n  Time budget exhausted ({elapsed/3600:.1f}h)")
-                save_state(STATE_KEY, {'completed_dates': sorted(completed)})
+                save_state(STATE_KEY, {
+                    'completed_dates': sorted(completed),
+                    'last_processed_date': sorted(completed)[-1] if completed else None,
+                })
                 return True
 
             batch = todo[i:i + PARALLELISM_COUNT]
@@ -102,13 +105,13 @@ def run() -> bool:
             futures = {executor.submit(fetch_pageviews_for_date, d): d for d in batch}
             for future in as_completed(futures):
                 d = futures[future]
-                try:
-                    future.result()
-                    completed.add(d.strftime('%Y-%m-%d'))
-                except ValueError as e:
-                    print(f"    Error {d.strftime('%Y-%m-%d')}: {e}")
+                future.result()
+                completed.add(d.strftime('%Y-%m-%d'))
 
-            save_state(STATE_KEY, {'completed_dates': sorted(completed)})
+            save_state(STATE_KEY, {
+                'completed_dates': sorted(completed),
+                'last_processed_date': sorted(completed)[-1],
+            })
 
     print(f"\n  Done — {len(todo)} dates processed this run")
     return False

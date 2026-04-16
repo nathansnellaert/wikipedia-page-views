@@ -44,6 +44,7 @@ MONTHLY_METADATA = {
         "column reflects the most recent page title seen for that id. Sorted by "
         "(page_id, month) for efficient per-entity queries."
     ),
+    "license": "CC BY-SA 4.0",
     "column_descriptions": {
         "month": "Month of observation, formatted as YYYY-MM.",
         "page_id": "Stable Wikipedia page identifier.",
@@ -60,6 +61,7 @@ DAILY_METADATA = {
         f"highest total views over the last {DAILY_WINDOW_DAYS} ingested days. "
         f"Rebuilt from scratch on each transform run. Sorted by (page_id, date)."
     ),
+    "license": "CC BY-SA 4.0",
     "column_descriptions": {
         "date": "Date of observation, formatted as YYYY-MM-DD.",
         "page_id": "Stable Wikipedia page identifier.",
