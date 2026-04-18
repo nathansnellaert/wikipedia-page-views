@@ -1,4 +1,4 @@
-"""Ingest Wikipedia page view data."""
+"""Ingest Wikipedia page view data from Wikimedia dumps."""
 import os
 import bz2
 import time
