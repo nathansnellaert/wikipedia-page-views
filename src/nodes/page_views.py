@@ -5,18 +5,38 @@ import time
 import io
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
+import httpx
 import pyarrow as pa
-from subsets_utils import get, load_state, save_state, save_raw_parquet
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception
+from subsets_utils import get, load_state, save_state, save_raw_parquet, configure_http
 
 GH_ACTIONS_MAX_RUN_SECONDS = 5.8 * 60 * 60
-PARALLELISM_COUNT = 4
+PARALLELISM_COUNT = 2
 STATE_KEY = "page_views_ingest"
+DOWNLOAD_TIMEOUT = 600  # seconds — dump files are hundreds of MB
+
+configure_http(timeout=DOWNLOAD_TIMEOUT)
+
+
+def _is_retryable(exc: BaseException) -> bool:
+    """Retry on 429 (rate limit) and 5xx (server errors)."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code == 429 or exc.response.status_code >= 500
+    if isinstance(exc, (httpx.TimeoutException, httpx.ConnectError)):
+        return True
+    return False
 
 
 def asset_id_for(date: datetime) -> str:
     return f"page_views_{date.strftime('%Y%m%d')}"
 
 
+@retry(
+    retry=retry_if_exception(_is_retryable),
+    wait=wait_exponential(multiplier=10, min=10, max=300),
+    stop=stop_after_attempt(5),
+    reraise=True,
+)
 def fetch_pageviews_for_date(date: datetime) -> None:
     """Fetch page views for a date and save as parquet."""
     url = f"https://dumps.wikimedia.org/other/pageview_complete/{date.year}/{date.year}-{date.month:02d}/pageviews-{date.year}{date.month:02d}{date.day:02d}-user.bz2"
@@ -107,11 +127,15 @@ def run() -> bool:
                 d = futures[future]
                 future.result()
                 completed.add(d.strftime('%Y-%m-%d'))
+                print(f"  -> Saved {asset_id_for(d)}")
 
             save_state(STATE_KEY, {
                 'completed_dates': sorted(completed),
                 'last_processed_date': sorted(completed)[-1],
             })
+
+            # Small delay between batches to respect Wikimedia rate limits
+            time.sleep(2)
 
     print(f"\n  Done — {len(todo)} dates processed this run")
     return False
