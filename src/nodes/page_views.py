@@ -8,10 +8,11 @@ from datetime import datetime, timedelta
 import httpx
 import pyarrow as pa
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception
+from connector_utils import asset_id_for_date
 from subsets_utils import get, load_state, save_state, save_raw_parquet, configure_http
 
 GH_ACTIONS_MAX_RUN_SECONDS = 5.8 * 60 * 60
-PARALLELISM_COUNT = 2
+PARALLELISM_COUNT = 1
 STATE_KEY = "page_views_ingest"
 DOWNLOAD_TIMEOUT = 600  # seconds — dump files are hundreds of MB
 
@@ -25,10 +26,6 @@ def _is_retryable(exc: BaseException) -> bool:
     if isinstance(exc, (httpx.TimeoutException, httpx.ConnectError)):
         return True
     return False
-
-
-def asset_id_for(date: datetime) -> str:
-    return f"page_views_{date.strftime('%Y%m%d')}"
 
 
 @retry(
@@ -69,7 +66,7 @@ def fetch_pageviews_for_date(date: datetime) -> None:
         'page_id': pa.array(page_ids, type=pa.string()),
         'views': pa.array(views, type=pa.int64()),
     })
-    save_raw_parquet(table, asset_id_for(date))
+    save_raw_parquet(table, asset_id_for_date(date))
 
 
 def load_completed_dates() -> set[str]:
@@ -127,7 +124,7 @@ def run() -> bool:
                 d = futures[future]
                 future.result()
                 completed.add(d.strftime('%Y-%m-%d'))
-                print(f"  -> Saved {asset_id_for(d)}")
+                print(f"  -> Saved {asset_id_for_date(d)}")
 
             save_state(STATE_KEY, {
                 'completed_dates': sorted(completed),

@@ -16,15 +16,12 @@ has new data since the last successful transform. Otherwise it is a no-op, so
 it is safe to wire as a dependency of the daily ingest workflow — during
 ingest continuation runs it just skips.
 """
-import os
 from datetime import datetime, timedelta
-from pathlib import Path
 
-import duckdb as ddb
+from connector_utils import connect_duckdb, all_parquets_glob, recent_parquet_uris
 from subsets_utils import (
-    load_state, save_state, overwrite, publish,
+    load_state, save_state, overwrite, publish, validate,
 )
-from subsets_utils.config import is_cloud, raw_uri
 
 from nodes.page_views import run as ingest_run
 
@@ -71,40 +68,7 @@ DAILY_METADATA = {
 }
 
 
-def _connect() -> ddb.DuckDBPyConnection:
-    """Open a DuckDB connection configured for R2 in cloud mode."""
-    con = ddb.connect()
-    if is_cloud():
-        con.sql(f"""
-            SET s3_endpoint='{os.environ['R2_ACCOUNT_ID']}.r2.cloudflarestorage.com';
-            SET s3_access_key_id='{os.environ['R2_ACCESS_KEY_ID']}';
-            SET s3_secret_access_key='{os.environ['R2_SECRET_ACCESS_KEY']}';
-            SET s3_region='auto';
-        """)
-    return con
-
-
-def _all_parquets_glob() -> str:
-    """Glob URI covering every ingested daily parquet."""
-    return raw_uri("page_views_*", "parquet")
-
-
-def _recent_parquet_uris(last_ingested: str) -> list[str]:
-    """Explicit list of parquet URIs for the last DAILY_WINDOW_DAYS days
-    ending at the given ingested date (inclusive). Every listed file must
-    exist — ingest is known to have processed them.
-    """
-    last = datetime.strptime(last_ingested, "%Y-%m-%d").date()
-    start = last - timedelta(days=DAILY_WINDOW_DAYS - 1)
-    uris = []
-    d = start
-    while d <= last:
-        uris.append(raw_uri(f"page_views_{d.strftime('%Y%m%d')}", "parquet"))
-        d += timedelta(days=1)
-    return uris
-
-
-def _build_monthly(con: ddb.DuckDBPyConnection):
+def _build_monthly(con):
     """Two-pass monthly build.
 
     Pass 1: aggregate total views + latest entity per page_id across the full
@@ -112,7 +76,7 @@ def _build_monthly(con: ddb.DuckDBPyConnection):
     Pass 2: re-scan the full window, filter to those page_ids, aggregate per
             (month, page_id). Sorted by (page_id, month) for pruning.
     """
-    glob = _all_parquets_glob()
+    glob = all_parquets_glob()
 
     print(f"[monthly] Pass 1: ranking top {TOP_MONTHLY:,} pages by total views")
     con.sql(f"""
@@ -145,13 +109,13 @@ def _build_monthly(con: ddb.DuckDBPyConnection):
     return table
 
 
-def _build_daily_recent(con: ddb.DuckDBPyConnection, last_ingested: str):
+def _build_daily_recent(con, last_ingested: str):
     """Daily view for the top 10k pages in the last 90 ingested days.
 
     Reads only the recent parquets (not the full window) so it is cheap.
     Sorted by (page_id, date).
     """
-    uris = _recent_parquet_uris(last_ingested)
+    uris = recent_parquet_uris(last_ingested, DAILY_WINDOW_DAYS)
     uri_list = "[" + ", ".join(f"'{u}'" for u in uris) + "]"
 
     print(f"[daily] ranking top {TOP_DAILY:,} pages over last {DAILY_WINDOW_DAYS} days ({len(uris)} files)")
@@ -205,13 +169,21 @@ def run():
         print(f"Transform already up to date at {last_ingested} — skipping.")
         return
 
-    con = _connect()
+    con = connect_duckdb()
 
     monthly = _build_monthly(con)
+    validate(monthly, {
+        "not_null": ["month", "page_id", "entity", "views"],
+        "min_rows": 1000,
+    })
     overwrite(monthly, "wikipedia_top_pages_monthly")
     publish("wikipedia_top_pages_monthly", MONTHLY_METADATA)
 
     daily = _build_daily_recent(con, last_ingested)
+    validate(daily, {
+        "not_null": ["date", "page_id", "entity", "views"],
+        "min_rows": 1000,
+    })
     overwrite(daily, "wikipedia_top_pages_daily_recent")
     publish("wikipedia_top_pages_daily_recent", DAILY_METADATA)
 
