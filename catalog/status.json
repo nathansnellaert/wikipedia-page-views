@@ -1,0 +1,281 @@
+{
+  "_meta": {
+    "catalog_source": "https://wikimedia.org/api/rest_v1/metrics",
+    "last_synced": "2026-04-25T19:48:55.906203+00:00"
+  },
+  "datasets": {
+    "pageviews_complete_dumps": {
+      "title": "Pageviews complete dumps",
+      "metadata": {
+        "description": "Best-effort comprehensive per-article pageview timeseries published on dumps.wikimedia.org, spanning the entire history (Dec 2007 onward) in a uniform format. Combines legacy pagecounts and modern pageviews.",
+        "source_url": "https://dumps.wikimedia.org/other/pageview_complete/",
+        "docs_url": "https://dumps.wikimedia.org/other/pageview_complete/readme.html",
+        "granularity": "article",
+        "time_resolution": "hourly, daily, monthly",
+        "update_frequency": "monthly",
+        "coverage_start": "2007-12-01",
+        "license": "CC0 1.0 (data) / CC BY-SA 3.0 (Wikipedia content)"
+      },
+      "status": "active",
+      "reason": null,
+      "node": "src/nodes/page_views.py"
+    },
+    "clickstream_dumps": {
+      "title": "Clickstream (article-to-article navigation)",
+      "metadata": {
+        "description": "Monthly aggregated counts of (referrer, target) article pairs derived from request logs — i.e. how readers navigate between articles. Available for major language editions (en, de, es, fr, it, ja, pl, pt, ru, zh, fa).",
+        "source_url": "https://dumps.wikimedia.org/other/clickstream/",
+        "docs_url": "https://meta.wikimedia.org/wiki/Research:Wikipedia_clickstream",
+        "granularity": "article-pair",
+        "time_resolution": "monthly",
+        "update_frequency": "monthly",
+        "coverage_start": "2017-11-01",
+        "license": "CC0 1.0 (data) / CC BY-SA 3.0 (Wikipedia content)"
+      },
+      "status": "disabled",
+      "reason": "awaiting curation",
+      "node": null
+    },
+    "unique_devices": {
+      "title": "Unique devices per project",
+      "metadata": {
+        "description": "Estimated number of unique devices visiting a Wikimedia project, by access site (all-sites / desktop-site / mobile-site), at daily and monthly granularity. Computed from anonymized last-access cookie.",
+        "source_url": "https://wikimedia.org/api/rest_v1/metrics/unique-devices/{project}/{access-site}/{granularity}/{start}/{end}",
+        "docs_url": "https://doc.wikimedia.org/generated-data-platform/aqs/analytics-api/reference/unique-devices.html",
+        "granularity": "project",
+        "time_resolution": "daily, monthly",
+        "update_frequency": "daily",
+        "coverage_start": "2016-01-01",
+        "license": "CC0 1.0 (data) / CC BY-SA 3.0 (Wikipedia content)"
+      },
+      "status": "disabled",
+      "reason": "awaiting curation",
+      "node": null
+    },
+    "mediarequests_per_file": {
+      "title": "Media requests per file",
+      "metadata": {
+        "description": "Daily or monthly request counts (hits on upload.wikimedia.org) for a specific media file, by referer.",
+        "source_url": "https://wikimedia.org/api/rest_v1/metrics/mediarequests/per-file/{referer}/{file_path}/{granularity}/{start}/{end}",
+        "docs_url": "https://wikitech.wikimedia.org/wiki/Data_Platform/AQS/Media_metrics",
+        "granularity": "file",
+        "time_resolution": "daily, monthly",
+        "update_frequency": "daily",
+        "coverage_start": "2015-01-01",
+        "license": "CC0 1.0 (data) / CC BY-SA 3.0 (Wikipedia content)"
+      },
+      "status": "disabled",
+      "reason": "awaiting curation",
+      "node": null
+    },
+    "pagecounts_ez_dumps": {
+      "title": "Pagecounts-EZ compressed dumps",
+      "metadata": {
+        "description": "Highly compressed monthly pageview dumps in pagecounts-ez format. Preserves all per-article counts but smaller than the hourly dumps; preferred for bulk historical analysis.",
+        "source_url": "https://dumps.wikimedia.org/other/pagecounts-ez/",
+        "docs_url": "https://meta.wikimedia.org/wiki/Research:Page_view",
+        "granularity": "article",
+        "time_resolution": "monthly",
+        "update_frequency": "monthly",
+        "coverage_start": "2011-12-01",
+        "license": "CC0 1.0 (data) / CC BY-SA 3.0 (Wikipedia content)"
+      },
+      "status": "disabled",
+      "reason": "awaiting curation",
+      "node": null
+    },
+    "mediacounts_dumps": {
+      "title": "Mediacounts daily dumps",
+      "metadata": {
+        "description": "Daily request counts for media files served from upload.wikimedia.org (including transcoded variants), published as TSV on dumps.wikimedia.org.",
+        "source_url": "https://dumps.wikimedia.org/other/mediacounts/daily/",
+        "docs_url": "https://dumps.wikimedia.org/other/mediacounts/",
+        "granularity": "file",
+        "time_resolution": "daily",
+        "update_frequency": "daily",
+        "coverage_start": "2015-01-01",
+        "license": "CC0 1.0 (data) / CC BY-SA 3.0 (Wikipedia content)"
+      },
+      "status": "disabled",
+      "reason": "awaiting curation",
+      "node": null
+    },
+    "pageviews_top_by_country": {
+      "title": "Top viewed articles per country per month",
+      "metadata": {
+        "description": "Most-viewed articles per project per country for a given month. View counts are bucketed (privacy-preserving) rather than exact.",
+        "source_url": "https://wikimedia.org/api/rest_v1/metrics/pageviews/top-by-country/{project}/{access}/{year}/{month}",
+        "docs_url": "https://doc.wikimedia.org/generated-data-platform/aqs/analytics-api/reference/page-views.html",
+        "granularity": "article x country",
+        "time_resolution": "monthly",
+        "update_frequency": "monthly",
+        "coverage_start": "2017-11-01",
+        "license": "CC0 1.0 (data) / CC BY-SA 3.0 (Wikipedia content)"
+      },
+      "status": "disabled",
+      "reason": "awaiting curation",
+      "node": null
+    },
+    "pageviews_legacy_pagecounts": {
+      "title": "Legacy pagecounts (pre-2015)",
+      "metadata": {
+        "description": "Legacy aggregate pageview counts from the older pagecounts dataset, covering January 2008 through July 2016. Methodology differs from the modern Pageviews definition (no bot filtering, no mobile in early years).",
+        "source_url": "https://wikimedia.org/api/rest_v1/metrics/legacy/pagecounts/aggregate/{project}/{access-site}/{granularity}/{start}/{end}",
+        "docs_url": "https://doc.wikimedia.org/generated-data-platform/aqs/analytics-api/reference/page-views.html",
+        "granularity": "project",
+        "time_resolution": "hourly, daily, monthly",
+        "update_frequency": "static (legacy)",
+        "coverage_start": "2008-01-01",
+        "coverage_end": "2016-07-31",
+        "license": "CC0 1.0 (data) / CC BY-SA 3.0 (Wikipedia content)"
+      },
+      "status": "disabled",
+      "reason": "awaiting curation",
+      "node": null
+    },
+    "pageviews_top": {
+      "title": "Top viewed articles per project per day/month",
+      "metadata": {
+        "description": "Most-viewed 1,000 articles for a given project on a given day or month, by access type.",
+        "source_url": "https://wikimedia.org/api/rest_v1/metrics/pageviews/top/{project}/{access}/{year}/{month}/{day}",
+        "docs_url": "https://doc.wikimedia.org/generated-data-platform/aqs/analytics-api/reference/page-views.html",
+        "granularity": "article (top-1000)",
+        "time_resolution": "daily, monthly",
+        "update_frequency": "daily",
+        "coverage_start": "2015-07-01",
+        "license": "CC0 1.0 (data) / CC BY-SA 3.0 (Wikipedia content)"
+      },
+      "status": "disabled",
+      "reason": "awaiting curation",
+      "node": null
+    },
+    "mediarequests_aggregate": {
+      "title": "Media requests aggregate",
+      "metadata": {
+        "description": "Aggregate media-file request counts on upload.wikimedia.org by referer, media type (image/audio/video/document/other) and agent type, at hourly / daily / monthly granularity.",
+        "source_url": "https://wikimedia.org/api/rest_v1/metrics/mediarequests/aggregate/{referer}/{media-type}/{agent}/{granularity}/{start}/{end}",
+        "docs_url": "https://wikitech.wikimedia.org/wiki/Data_Platform/AQS/Media_metrics",
+        "granularity": "global (by referer)",
+        "time_resolution": "hourly, daily, monthly",
+        "update_frequency": "hourly",
+        "coverage_start": "2015-01-01",
+        "license": "CC0 1.0 (data) / CC BY-SA 3.0 (Wikipedia content)"
+      },
+      "status": "disabled",
+      "reason": "awaiting curation",
+      "node": null
+    },
+    "pageviews_hourly_dumps": {
+      "title": "Pageviews hourly dumps",
+      "metadata": {
+        "description": "Hourly aggregated pageview files (one row per (project, article, hour)) published as gzipped text on dumps.wikimedia.org. Covers all Wikimedia projects from May 2015 onward. Long-tail articles included (no top-1000 cap).",
+        "source_url": "https://dumps.wikimedia.org/other/pageviews/",
+        "docs_url": "https://dumps.wikimedia.org/other/pageviews/readme.html",
+        "granularity": "article",
+        "time_resolution": "hourly",
+        "update_frequency": "hourly",
+        "coverage_start": "2015-05-01",
+        "license": "CC0 1.0 (data) / CC BY-SA 3.0 (Wikipedia content)"
+      },
+      "status": "disabled",
+      "reason": "awaiting curation",
+      "node": null
+    },
+    "pageviews_aggregate": {
+      "title": "Pageviews aggregate (per project)",
+      "metadata": {
+        "description": "Aggregate pageview counts per Wikimedia project, by access type and agent type, at hourly / daily / monthly granularity.",
+        "source_url": "https://wikimedia.org/api/rest_v1/metrics/pageviews/aggregate/{project}/{access}/{agent}/{granularity}/{start}/{end}",
+        "docs_url": "https://doc.wikimedia.org/generated-data-platform/aqs/analytics-api/reference/page-views.html",
+        "granularity": "project",
+        "time_resolution": "hourly, daily, monthly",
+        "update_frequency": "hourly",
+        "coverage_start": "2015-05-01",
+        "license": "CC0 1.0 (data) / CC BY-SA 3.0 (Wikipedia content)"
+      },
+      "status": "disabled",
+      "reason": "awaiting curation",
+      "node": null
+    },
+    "pageviews_per_article": {
+      "title": "Pageviews per article",
+      "metadata": {
+        "description": "Daily or monthly pageview counts for a single Wikipedia article, by project, access type (desktop/mobile-web/mobile-app) and agent type (user/spider/automated). Data from July 2015 onward.",
+        "source_url": "https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/{project}/{access}/{agent}/{article}/{granularity}/{start}/{end}",
+        "docs_url": "https://doc.wikimedia.org/generated-data-platform/aqs/analytics-api/reference/page-views.html",
+        "granularity": "article",
+        "time_resolution": "daily, monthly",
+        "update_frequency": "daily",
+        "coverage_start": "2015-07-01",
+        "license": "CC0 1.0 (data) / CC BY-SA 3.0 (Wikipedia content)"
+      },
+      "status": "disabled",
+      "reason": "awaiting curation",
+      "node": null
+    },
+    "pageviews_per_country": {
+      "title": "Pageviews per country aggregate",
+      "metadata": {
+        "description": "Aggregate pageviews per country per project, by access type, at monthly granularity. Counts are bucketed for privacy.",
+        "source_url": "https://wikimedia.org/api/rest_v1/metrics/pageviews/aggregate-per-country/{project}/{access}/{year}/{month}",
+        "docs_url": "https://doc.wikimedia.org/generated-data-platform/aqs/analytics-api/reference/page-views.html",
+        "granularity": "project x country",
+        "time_resolution": "monthly",
+        "update_frequency": "monthly",
+        "coverage_start": "2017-11-01",
+        "license": "CC0 1.0 (data) / CC BY-SA 3.0 (Wikipedia content)"
+      },
+      "status": "disabled",
+      "reason": "awaiting curation",
+      "node": null
+    },
+    "mediarequests_top": {
+      "title": "Top requested media files per day/month",
+      "metadata": {
+        "description": "Most-requested 1,000 media files (Commons / project uploads) for a given day or month, by referer and media type.",
+        "source_url": "https://wikimedia.org/api/rest_v1/metrics/mediarequests/top/{referer}/{media-type}/{year}/{month}/{day}",
+        "docs_url": "https://wikitech.wikimedia.org/wiki/Data_Platform/AQS/Media_metrics",
+        "granularity": "file (top-1000)",
+        "time_resolution": "daily, monthly",
+        "update_frequency": "daily",
+        "coverage_start": "2015-01-01",
+        "license": "CC0 1.0 (data) / CC BY-SA 3.0 (Wikipedia content)"
+      },
+      "status": "disabled",
+      "reason": "awaiting curation",
+      "node": null
+    },
+    "unique_devices_dumps": {
+      "title": "Unique devices dumps",
+      "metadata": {
+        "description": "Per-project daily unique-device estimates published as TSV on dumps.wikimedia.org. Same underlying data as the AQS unique-devices endpoint, in bulk form.",
+        "source_url": "https://dumps.wikimedia.org/other/unique_devices/",
+        "docs_url": "https://dumps.wikimedia.org/other/unique_devices/",
+        "granularity": "project",
+        "time_resolution": "daily, monthly",
+        "update_frequency": "daily",
+        "coverage_start": "2016-01-01",
+        "license": "CC0 1.0 (data) / CC BY-SA 3.0 (Wikipedia content)"
+      },
+      "status": "disabled",
+      "reason": "awaiting curation",
+      "node": null
+    },
+    "pageviews_top_per_country": {
+      "title": "Top viewing countries per article per month",
+      "metadata": {
+        "description": "Per-article country-of-origin breakdown of viewers, returning the top countries (bucketed view counts) that viewed a given article in a month.",
+        "source_url": "https://wikimedia.org/api/rest_v1/metrics/pageviews/top-per-country/{project}/{access}/{article}/{year}/{month}",
+        "docs_url": "https://doc.wikimedia.org/generated-data-platform/aqs/analytics-api/reference/page-views.html",
+        "granularity": "article x country",
+        "time_resolution": "monthly",
+        "update_frequency": "monthly",
+        "coverage_start": "2021-02-01",
+        "license": "CC0 1.0 (data) / CC BY-SA 3.0 (Wikipedia content)"
+      },
+      "status": "disabled",
+      "reason": "awaiting curation",
+      "node": null
+    }
+  }
+}

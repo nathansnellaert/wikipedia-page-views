@@ -57,11 +57,16 @@ from .tracking import (
 )
 
 
-# Fork context for subprocess-per-node execution. Fork is fast (~10ms via CoW)
-# and lets the child inherit the supervisor's loaded modules and DAG metadata
-# without re-importing anything. Linux + macOS supported (our stack —
-# pyarrow/fsspec/requests/deltalake — does not touch fork-unsafe Apple APIs).
-_MP_CTX = multiprocessing.get_context("fork")
+# Spawn context for subprocess-per-node execution. Spawn re-imports the world
+# in a fresh interpreter (~1s startup) but inherits no thread/lock state from
+# the supervisor. Fork was tried and deadlocked on long catalog runs: by the
+# time we forked for a later node, the parent had imported httpx/s3fs/asyncio
+# and made HTTP+async calls, leaving background threads mid-lock. The forked
+# child inherited the locked memory without the threads holding the locks and
+# hung the first time it touched HTTP — supervisor then waited forever on the
+# child's sentinel. Spawn pays the import cost per node to make that class of
+# hang impossible.
+_MP_CTX = multiprocessing.get_context("spawn")
 
 # Cap on the pickled size of a child→supervisor result dict. Defends against a
 # node accidentally stuffing a large pa.Table into a tracking record. 10 MB is
@@ -410,6 +415,10 @@ class DAG:
             DAG_ON_FAILURE: "crash" (default) or "continue".
             DAG_PARALLELISM: Max concurrent nodes (default 1 = sequential).
             DAG_DRAIN_TIMEOUT_S: Max seconds to wait for children on SIGTERM (default 8).
+            DAG_MAX_CONSECUTIVE_FAILURES: In continue mode, halt after this many
+              consecutive node failures (default 10). Resets on any success.
+              Guards against thrashing when an entire run is broken (auth dead,
+              R2 down, etc.). Ignored in crash mode.
 
         Behavior:
             - Each node runs in a fresh forked child; OS reclaims RSS on exit.
@@ -417,7 +426,8 @@ class DAG:
               continues unless DAG_ON_FAILURE=crash.
             - On a node returning True: marks needs_continuation, continues running.
             - On node failure with crash mode: drains in-flight tasks, then raises.
-            - On node failure with continue mode: raises after all nodes complete.
+            - On node failure with continue mode: raises after all nodes complete,
+              OR halts early if DAG_MAX_CONSECUTIVE_FAILURES is reached.
             - On SIGTERM: drains in-flight, marks remaining as failed, schreef
               run.json with status="failed". No auto-retrigger from host kill.
             - The DAG class never calls sys.exit() — exit codes are runner.py's job.
@@ -425,6 +435,10 @@ class DAG:
         clear_tracking()
 
         on_failure = os.environ.get("DAG_ON_FAILURE", "crash")
+        try:
+            max_consec = max(1, int(os.environ.get("DAG_MAX_CONSECUTIVE_FAILURES", "10")))
+        except ValueError:
+            max_consec = 10
         try:
             parallelism = max(1, int(os.environ.get("DAG_PARALLELISM", "1")))
         except ValueError:
@@ -468,6 +482,7 @@ class DAG:
 
         first_failure = None
         stop_submitting = False
+        consecutive_failures = 0
 
         def find_ready() -> list[Callable]:
             """Return pending nodes whose deps are done, in topological order.
@@ -570,11 +585,18 @@ class DAG:
                         print(f"[DAG] {task_id} done ({duration:.1f}s){cont_msg}")
                         if os.environ.get("DAG_VERBOSE") == "1":
                             self._print_node_detail(task_id)
+                        consecutive_failures = 0
                     else:
                         print(f"[DAG] {task_id} failed: {result.get('error', 'unknown')}")
                         if first_failure is None:
                             first_failure = result
+                        consecutive_failures += 1
                         if on_failure == "crash":
+                            stop_submitting = True
+                        elif consecutive_failures >= max_consec:
+                            print(f"[DAG] Halting: {consecutive_failures} consecutive failures "
+                                  f"(DAG_MAX_CONSECUTIVE_FAILURES={max_consec}). "
+                                  f"Likely a systemic issue — fix and rerun.")
                             stop_submitting = True
 
                 if self._shutdown_requested:

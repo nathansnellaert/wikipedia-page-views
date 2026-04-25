@@ -11,6 +11,11 @@ on:
         required: false
         type: string
         default: 'crash'
+      max_consecutive_failures:
+        description: 'Halt continue-mode runs after N consecutive failures (default 10)'
+        required: false
+        type: string
+        default: '10'
       run_id:
         description: 'Run ID for grouping continuation invocations'
         required: false
@@ -51,6 +56,7 @@ jobs:
         R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
         DAG_TARGET: ${{ inputs.dag_target }}
         DAG_ON_FAILURE: ${{ inputs.dag_on_failure }}
+        DAG_MAX_CONSECUTIVE_FAILURES: ${{ inputs.max_consecutive_failures }}
         RUN_ID: ${{ inputs.run_id }}
 
     - name: Retrigger if continuation needed
