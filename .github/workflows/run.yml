@@ -57,7 +57,7 @@ jobs:
       if: steps.connector.outputs.exit_code == '2'
       run: gh workflow run run.yml
       env:
-        GH_TOKEN: ${{ secrets.GH_PAT }}
+        GH_TOKEN: ${{ secrets.GH_RETRIGGER_PAT }}
 
     - name: Fail if connector failed
       if: steps.connector.outputs.exit_code != '0' && steps.connector.outputs.exit_code != '2'
