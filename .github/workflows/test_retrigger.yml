@@ -1,0 +1,43 @@
+name: Test Retrigger
+on:
+  workflow_dispatch:
+    inputs:
+      iteration:
+        description: 'Current iteration (auto-increments via retrigger)'
+        required: false
+        type: string
+        default: '1'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Echo iteration
+        run: |
+          echo "===================="
+          echo "Iteration: ${{ inputs.iteration }}"
+          echo "===================="
+
+      - name: Compute next iteration
+        id: next
+        run: |
+          current=${{ inputs.iteration }}
+          next=$((current + 1))
+          echo "next=$next" >> $GITHUB_OUTPUT
+          if [ "$current" -lt 3 ]; then
+            echo "should_retrigger=true" >> $GITHUB_OUTPUT
+          else
+            echo "should_retrigger=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Retrigger with next iteration
+        if: steps.next.outputs.should_retrigger == 'true'
+        run: |
+          echo "Dispatching test_retrigger.yml with iteration=${{ steps.next.outputs.next }}"
+          gh workflow run test_retrigger.yml -f iteration=${{ steps.next.outputs.next }}
+        env:
+          GH_TOKEN: ${{ secrets.GH_RETRIGGER_PAT }}
+
+      - name: Done
+        if: steps.next.outputs.should_retrigger == 'false'
+        run: echo "Reached iteration 3, stopping."
